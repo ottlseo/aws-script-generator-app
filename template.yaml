@@ -3,10 +3,6 @@ Transform: 'AWS::Serverless-2016-10-31'
 Description: >
   Create resources for a project that generate transcript of video
   file. Uses Step Functions, S3, EventBridge, Transcribe
-Parameters:
-  FillerPhrase:
-    Type: String
-    Default: you know
 Resources:
   TranscriptMediaBucket:
     Type: 'AWS::S3::Bucket'
@@ -160,6 +156,7 @@ Resources:
               TranscriptionJobName.$: $.detail.object.key
               IdentifyLanguage: true
               OutputBucketName: !Ref TranscriptResultsBucket
+              OutputKey: temp.json
             Resource: !Sub >-
               arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:aws-sdk:transcribe:startTranscriptionJob
             Next: Wait
