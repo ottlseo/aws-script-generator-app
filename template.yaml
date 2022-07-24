@@ -150,10 +150,8 @@ Resources:
             Comment: Start a transcribe job on the provided media file
             Parameters:
               Media:
-                MediaFileUri.$: >-
-                  States.Format('s3://{}/{}', $.detail.bucket.name,
-                  $.detail.object.key)
-              TranscriptionJobName.$: $.detail.object.key
+                MediaFileUri.$: States.Format('s3://{}/{}', $.detail.bucket.name, $.detail.object.key)
+              TranscriptionJobName.$: "$$.Execution.Name"
               IdentifyLanguage: true
               OutputBucketName: !Ref TranscriptResultsBucket
               OutputKey: temp.json
@@ -162,7 +160,7 @@ Resources:
             Next: Wait
           Wait:
             Type: Wait
-            Seconds: 60
+            Seconds: 10
             Next: GetTranscriptionJob
           GetTranscriptionJob:
             Type: Task
@@ -197,7 +195,7 @@ Resources:
               Key: temp.json
             Next: PutObject
             ResultSelector: 
-              filecontent.$": >-
+              filecontent.$: >-
                 States.StringToJson($.Body)
             ResultPath: $.transcription
           PutObject:
