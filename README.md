@@ -46,7 +46,8 @@ You can play the demo, use the [sample-video.mp4 file](./resources/sample-video.
 
 ## Image
 Provide an exported .png of the workflow in the `/resources` directory from [Workflow stuio](https://docs.aws.amazon.com/step-functions/latest/dg/workflow-studio.html) and add here.
-![image](./resources/statemachine.png)
+
+![image](./assets/statemachine.png)
 
 ## Testing
 
