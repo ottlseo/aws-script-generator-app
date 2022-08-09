@@ -1,11 +1,73 @@
 {
-  "Comment": "Invoke Transcribe on a media file, when complete execute the results query Step Function and output the results",
-  "StartAt": "StartTranscriptionJob",
+  "Comment": "Video",
+  "StartAt": "CreateVocabularyFilter",
   "States": {
-    "Failed": {
-      "Cause": "transcription job failed",
-      "Error": "FAILED",
-      "Type": "Fail"
+    "CreateVocabularyFilter": {
+      "Type": "Task",
+      "Next": "Wait for Creating Filter",
+      "Parameters": {
+        "LanguageCode": "en-US",
+        "VocabularyFilterName": "badWordFilter",
+        "Words": [
+          "mug",
+          "fucking"
+        ]
+      },
+      "Resource": "arn:aws:states:::aws-sdk:transcribe:createVocabularyFilter",
+      "ResultPath": null
+    },
+    "Wait for Creating Filter": {
+      "Type": "Wait",
+      "Seconds": 20,
+      "Next": "StartTranscriptionJob"
+    },
+    "StartTranscriptionJob": {
+      "Comment": "Start a transcribe job on the provided media file",
+      "Next": "Wait for Starting Job",
+      "Parameters": {
+        "Media": {
+          "MediaFileUri.$": "States.Format('s3://{}/{}', $.detail.bucket.name, $.detail.object.key)"
+        },
+        "OutputBucketName": "bucket-776177632559-us-east-1-transcript-results",
+        "OutputKey": "temp.json",
+        "LanguageCode": "en-US",
+        "TranscriptionJobName.$": "$$.Execution.Name",
+        "Settings": {
+          "VocabularyFilterMethod": "mask",
+          "VocabularyFilterName": "badWordFilter"
+        }
+      },
+      "Resource": "arn:aws:states:us-east-1:776177632559:aws-sdk:transcribe:startTranscriptionJob",
+      "Type": "Task"
+    },
+    "Wait for Starting Job": {
+      "Type": "Wait",
+      "Seconds": 10,
+      "Next": "GetTranscriptionJobStatus"
+    },
+    "GetTranscriptionJobStatus": {
+      "Type": "Task",
+      "Parameters": {
+        "TranscriptionJobName.$": "$.TranscriptionJob.TranscriptionJobName"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:transcribe:getTranscriptionJob",
+      "Next": "TranscriptionJobStatus"
+    },
+    "TranscriptionJobStatus": {
+      "Choices": [
+        {
+          "Next": "GetObject",
+          "StringEquals": "COMPLETED",
+          "Variable": "$.TranscriptionJob.TranscriptionJobStatus"
+        },
+        {
+          "Next": "Fail",
+          "StringEquals": "FAILED",
+          "Variable": "$.TranscriptionJob.TranscriptionJobStatus"
+        }
+      ],
+      "Default": "Wait for Starting Job",
+      "Type": "Choice"
     },
     "GetObject": {
       "Comment": "Get Transcribed json file",
@@ -17,17 +79,8 @@
       "Resource": "arn:aws:states:us-east-1:776177632559:aws-sdk:s3:getObject",
       "ResultPath": "$.transcription",
       "ResultSelector": {
-        "filecontent.$\"": "States.StringToJson($.Body)"
+        "filecontent.$": "States.StringToJson($.Body)"
       },
-      "Type": "Task"
-    },
-    "GetTranscriptionJob": {
-      "Comment": "Retrieve the status of an Amazon Transcribe job",
-      "Next": "TranscriptionJobStatus",
-      "Parameters": {
-        "TranscriptionJobName.$": "$.TranscriptionJob.TranscriptionJobName"
-      },
-      "Resource": "arn:aws:states:us-east-1:776177632559:aws-sdk:transcribe:getTranscriptionJob",
       "Type": "Task"
     },
     "PutObject": {
@@ -41,42 +94,8 @@
       "Resource": "arn:aws:states:us-east-1:776177632559:aws-sdk:s3:putObject",
       "Type": "Task"
     },
-    "StartTranscriptionJob": {
-      "Comment": "Start a transcribe job on the provided media file",
-      "Next": "Wait",
-      "Parameters": {
-        "IdentifyLanguage": true,
-        "Media": {
-          "MediaFileUri.$": "States.Format('s3://{}/{}', $.detail.bucket.name, $.detail.object.key)"
-        },
-        "OutputBucketName": "bucket-776177632559-us-east-1-transcript-results",
-        "OutputKey": "temp.json",
-        "TranscriptionJobName.$": "$.detail.object.key"
-      },
-      "Resource": "arn:aws:states:us-east-1:776177632559:aws-sdk:transcribe:startTranscriptionJob",
-      "Type": "Task"
-    },
-    "TranscriptionJobStatus": {
-      "Choices": [
-        {
-          "Next": "GetObject",
-          "StringEquals": "COMPLETED",
-          "Variable": "$.TranscriptionJob.TranscriptionJobStatus"
-        },
-        {
-          "Next": "Failed",
-          "StringEquals": "FAILED",
-          "Variable": "$.TranscriptionJob.TranscriptionJobStatus"
-        }
-      ],
-      "Default": "Wait",
-      "Type": "Choice"
-    },
-    "Wait": {
-      "Next": "GetTranscriptionJob",
-      "Seconds": 60,
-      "Type": "Wait"
+    "Fail": {
+      "Type": "Fail"
     }
-  },
-  "TimeoutSeconds": 900
+  }
 }
