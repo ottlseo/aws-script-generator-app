@@ -1,13 +1,18 @@
 AWSTemplateFormatVersion: 2010-09-09
 Transform: 'AWS::Serverless-2016-10-31'
 Description: >
-  Create resources for a project that generate transcript of video
-  file. Uses Step Functions, S3, EventBridge, Transcribe
+  Create resources for a project that generate script of video file that filters the words you want.
+  Uses Step Functions, S3, EventBridge, Transcribe.
+Parameters:
+  WordToFilter:
+    Type: String
+    Description: Word to filter in the script. 
+    Default: 'amazon'
 Resources:
   TranscriptMediaBucket:
     Type: 'AWS::S3::Bucket'
     Properties:
-      BucketName: !Sub 'bucket-${AWS::AccountId}-${AWS::Region}-transcript-media'
+      BucketName: !Sub 'bucket-${AWS::AccountId}-${AWS::Region}-filtering-media'
       NotificationConfiguration:
         EventBridgeConfiguration:
           EventBridgeEnabled: true
@@ -68,7 +73,7 @@ Resources:
   TranscriptResultsBucket:
     Type: 'AWS::S3::Bucket'
     Properties:
-      BucketName: !Sub 'bucket-${AWS::AccountId}-${AWS::Region}-transcript-results'
+      BucketName: !Sub 'bucket-${AWS::AccountId}-${AWS::Region}-filtering-results'
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -119,7 +124,7 @@ Resources:
   #   STEP FUNCTION                                                        #
   ##########################################################################  
     
-  TranscriptGeneratorStateMachine:
+  FilteringStateMachine:
     Type: 'AWS::Serverless::StateMachine'
     Properties:
       Tracing:
@@ -142,19 +147,37 @@ Resources:
         Comment: >-
           Invoke Transcribe on a media file, when complete execute the results
           query Step Function and output the results
-        StartAt: StartTranscriptionJob
+        StartAt: CreateVocabularyFilter
         TimeoutSeconds: 900
         States:
+          CreateVocabularyFilter:
+            Type: Task
+            Next: WaitCreatingFilter
+            Parameters:
+              LanguageCode: en-US
+              VocabularyFilterName: badWordFilter
+              Words: 
+                - !Sub ${WordToFilter}
+            Resource: !Sub >-
+              arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:aws-sdk:transcribe:createVocabularyFilter
+            ResultPath: null
+          WaitCreatingFilter:
+            Type: Wait
+            Seconds: 20
+            Next: StartTranscriptionJob
           StartTranscriptionJob:
             Type: Task
             Comment: Start a transcribe job on the provided media file
             Parameters:
               Media:
                 MediaFileUri.$: States.Format('s3://{}/{}', $.detail.bucket.name, $.detail.object.key)
-              TranscriptionJobName.$: "$$.Execution.Name"
-              IdentifyLanguage: true
               OutputBucketName: !Ref TranscriptResultsBucket
               OutputKey: temp.json
+              LanguageCode: en-US
+              TranscriptionJobName.$: "$$.Execution.Name"
+              Settings:
+                VocabularyFilterMethod: mask
+                VocabularyFilterName: badWordFilter
             Resource: !Sub >-
               arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:aws-sdk:transcribe:startTranscriptionJob
             Next: Wait
@@ -191,7 +214,7 @@ Resources:
             Resource: !Sub >-
               arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:aws-sdk:s3:getObject
             Parameters:
-              Bucket: !Sub 'bucket-${AWS::AccountId}-${AWS::Region}-transcript-results'
+              Bucket: !Sub 'bucket-${AWS::AccountId}-${AWS::Region}-filtering-results'
               Key: temp.json
             Next: PutObject
             ResultSelector: 
@@ -205,8 +228,8 @@ Resources:
               arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:aws-sdk:s3:putObject
             Parameters:
               Body.$: $.transcription.filecontent.results.transcripts[0].transcript
-              Bucket: !Sub 'bucket-${AWS::AccountId}-${AWS::Region}-transcript-results'
-              Key: transcript.txt
+              Bucket: !Sub 'bucket-${AWS::AccountId}-${AWS::Region}-filtering-results'
+              Key: script_filtering.txt
             End: true
 
       Policies:
@@ -233,6 +256,7 @@ Resources:
               Action:
                 - 'transcribe:GetTranscriptionJob'
                 - 'transcribe:StartTranscriptionJob'
+                - 'transcribe:CreateVocabularyFilter'
               Resource: '*'
     Metadata:
-      SamResourceId: TranscriptGeneratorStateMachine
+      SamResourceId: FilteringStateMachine
